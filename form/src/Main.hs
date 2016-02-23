@@ -135,31 +135,6 @@ programs cl = map fromDatum . filter ((== Just cl) . pdCluster)
 
 
 
-{- cluster1 = Cluster 1 [Program "some program" (City "New York") (State "NY") 3 "http://some.where.com"] -}
-
-{- pairs :: [Pair] -}
-{- pairs = [Pair { -}
-      {- pSpecialty  = Specialty "CARDIOLOGY" -}
-    {- , pCluster    = cluster1 -}
-    {- , pS1MinScore = 100 -}
-    {- , pS1MaxScore = 200 -}
-    {- , pS2MinScore = 100 -}
-    {- , pH1Bprob    = 0.1 -}
-    {- , pJ1prob     = 0.6 -}
-    {- , pNInterviews = 20 -}
-    {- }  -}
-  {- , Pair { -}
-      {- pSpecialty  = Specialty "PSYCHIATRY" -}
-    {- , pCluster    = cluster1 -}
-    {- , pS1MinScore = 110 -}
-    {- , pS1MaxScore = 210 -}
-    {- , pS2MinScore = 200 -}
-    {- , pH1Bprob    = 0.5 -}
-    {- , pJ1prob     = 0.9 -}
-    {- , pNInterviews = 30 -}
-    {- }  -}
-  {- ] -}
-
 specialties :: [Pair] -> [Specialty] 
 specialties = nub . map pSpecialty 
 
@@ -178,7 +153,6 @@ main = mainWidgetWithHead stylesheet $ do
                       <$> (fromJS <$> programData) 
                       <*> (fromJS <$> clusterData)
 
-  {- programs <- fromJS <$> programData -}
 
   input <- inputForm $ do
     score <- textField "Score"
