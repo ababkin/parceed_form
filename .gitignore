@@ -9,7 +9,6 @@ cabal-dev
 .cabal-sandbox/
 cabal.sandbox.config
 cabal.config
-*.jsexe
 *.js_hi
 *.js_o
 *~
@@ -18,3 +17,11 @@ TAGS
 data.js
 programs.*
 clusters.*
+
+**/Main.jsexe/all.js
+**/Main.jsexe/out.js
+**/Main.jsexe/out.stats
+**/Main.jsexe/lib.js
+**/Main.jsexe/rts.js
+**/Main.jsexe/runmain.js
+**/Main.jsexe/manifest.webapp

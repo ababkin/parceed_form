@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE BangPatterns #-}
 
 import Reflex.Dom
 import qualified Data.Map as M
@@ -15,95 +17,19 @@ import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON),
 import Data.Aeson.Types (typeMismatch, Parser, Object)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Lazy.Char8 as LBS
-
+import Data.List (sort, maximum)
+import qualified Data.Set as S
 import qualified GHCJS.Types    as T
 import qualified GHCJS.DOM.Types    as DT
 import qualified GHCJS.Foreign  as F
 
+import Types
+
+
 foreign import javascript unsafe "clusterData()" clusterData :: IO (T.JSString)
 foreign import javascript unsafe "programData()" programData :: IO (T.JSString)
 
-
-data ClusterDatum = ClusterDatum {
-    cdSpecialty :: String
-  , cdCluster   :: Int
-  , cdIndicator :: String
-  , cdAvgValue  :: Double
-  }
-
-instance FromJSON ClusterDatum where
-  parseJSON (Object o) = ClusterDatum
-    <$> o .: "specialty"
-    <*> (read <$> o .: "cluster")
-    <*> o .: "indicator"
-    <*> (read <$> o .: "avgValue")
-  parseJSON o = typeMismatch "ClusterDatum" o
-
-
-data ProgramDatum = ProgramDatum {
-    pdId                 :: String
-  , pdSchoolName         :: String
-  , pdSpecialty          :: String
-  , pdCity               :: String
-  , pdState              :: String
-  , pdResidencySpecialty :: String
-  , pdPrevGMEYears       :: Maybe Int
-  , pdCluster            :: Maybe Int
-  , pdLink               :: String
-  }
-
-instance FromJSON ProgramDatum where
-  parseJSON (Object o) = ProgramDatum
-    <$> o .: "id"
-    <*> o .: "schoolName"
-    <*> o .: "specialty"
-    <*> o .: "city"
-    <*> o .: "state"
-    <*> o .: "residencySpecialty"
-    <*> (readMay <$> o .: "prevGMEYears")
-    <*> (readMay <$> o .: "cluster")
-    <*> o .: "link"
-  parseJSON o = typeMismatch "ProgramDatum" o
-
-
-data Specialty = Specialty {unSpecialty :: String} deriving (Eq, Read, Show, Ord)
-
-newtype City  = City String deriving Eq
-newtype State = State String deriving Eq
-
-data Pair = Pair {
-    pSpecialty    :: Specialty
-  , pCluster      :: Cluster
-  , pS1MinScore   :: Double
-  , pS1MaxScore   :: Double
-  , pS2MinScore   :: Double
-  , pH1Bprob      :: Double
-  , pJ1prob       :: Double
-  , pNInterviews  :: Double
-  }
-
-{- type Clusters = M.Map Specialty Cluster -}
-
-data Cluster = Cluster {
-    cId       :: Int
-  , cPrograms :: [Program]
-  }
-
-data Program = Program{
-    pName   :: String
-  , pCity   :: City
-  , pState  :: State
-  , pMinYrs :: Maybe Int
-  , pLink   :: String
-  } deriving Eq
-
-data In = In {
-    iScore      :: Int
-  , iSpecialty  :: Specialty
-  , iIntl       :: Bool
-  }
-
-
+foreign import javascript unsafe "resultStates($1)" resultStates :: T.JSString ->IO ()
 
 dataToPairs :: [ProgramDatum] -> [ClusterDatum] -> [Pair]
 dataToPairs pds = M.elems . M.mapWithKey makePair . cdMap
@@ -122,7 +48,7 @@ dataToPairs pds = M.elems . M.mapWithKey makePair . cdMap
     cdMap :: [ClusterDatum] -> M.Map (String, Int) [(String, Double)]
     cdMap = foldl' accum M.empty 
     
-    accum mp ClusterDatum{cdSpecialty, cdCluster, cdIndicator, cdAvgValue} = 
+    accum !mp ClusterDatum{cdSpecialty, cdCluster, cdIndicator, cdAvgValue} = 
       M.unionWith (++) mp $ M.singleton (cdSpecialty, cdCluster) [(cdIndicator, cdAvgValue)]
 
 
@@ -130,8 +56,8 @@ programs :: Int -> [ProgramDatum] -> [Program]
 programs cl = map fromDatum . filter ((== Just cl) . pdCluster)
   where
     fromDatum :: ProgramDatum -> Program
-    fromDatum ProgramDatum{pdSchoolName, pdCity, pdState, pdPrevGMEYears, pdLink} =
-      Program pdSchoolName (City pdCity) (State pdState) pdPrevGMEYears pdLink
+    fromDatum ProgramDatum{pdSchoolName, pdCity, pdState, pdPrevGMEYears, pdLink, pdResidencySpecialty} =
+      Program pdSchoolName (City pdCity) (State pdState) pdPrevGMEYears pdLink (Specialty pdResidencySpecialty)
 
 
 
@@ -146,49 +72,60 @@ specialtiesMap = M.fromList . map (\s@(Specialty t) -> (s, t)) . specialties
 stylesheet :: MonadWidget t m => m ()
 stylesheet = elAttr "link" ("rel" =: "stylesheet" <> "href" =: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css") $ return ()
 
-main = mainWidgetWithHead stylesheet $ do
-
-  
-  pairs <- liftIO $ dataToPairs 
-                      <$> (fromJS <$> programData) 
-                      <*> (fromJS <$> clusterData)
-
-
-  input <- inputForm $ do
-    score <- textField "Score"
-    maybeScore <- mapDyn readMay score 
+main = do
+  !pairs <- dataToPairs 
+                      <$> (decodeFromJS <$> programData) 
+                      <*> (decodeFromJS <$> clusterData)
+  mainWidgetWithHead stylesheet $ do
 
 
+    elAttr "div" ("class" =: "container") $ do
+      elAttr "div" ("class" =: "row") $ do
+        elAttr "div" ("class" =: "col-md-4") $ do
 
-    specialty <- selectorField "Specialty" (head $ specialties pairs) (constDyn $ specialtiesMap pairs)
+          filteredPrograms <- inputForm $ do
+            maybeScore1 <- mapDyn readMay =<< textField "Step 1 score"
 
-    international <- selectorField "International" False (constDyn $ M.fromList [(False, "No"), (True, "Yes")])
-
-
-    combineDyn (\maybeScore (specialty, international) -> In (fromMaybe 0 maybeScore) specialty international) maybeScore 
-     =<< combineDyn (\x y -> (x,y)) specialty international
-
-    {- elAttr "div" ("style" =: s) $ text "Othello" -}
-    {- setup -}
-    {- where -}
-      {- s = "font-size: 50px; margin-left: 155px; font-family: Helvetica; color: steelblue" -}
+            maybeScore2 <- mapDyn readMay =<< textField "Step 2 score"
 
 
-  {- submitEvent <- button "Submit" -}
+            specialty <- selectorField "Specialty" (head $ specialties pairs) (constDyn $ specialtiesMap pairs)
 
-  {- el "div" . widgetHold blank . ffor submitEvent $ \_ -> -}
-  {- el "div" . dynText =<< mapDyn (show . iScore) input -}
+            international <- selectorField "International" False (constDyn $ M.fromList [(False, "No"), (True, "Yes")])
 
-  dyn =<< mapDyn (renderPrograms . calculate pairs) input
-
-  return ()
-
-fromJS :: FromJSON a => T.JSString -> a
-fromJS = fromJust . decode . LBS.pack . DT.fromJSString
+            maybeExperience <- mapDyn readMay =<< textField "Years of experience"
 
 
 
-inputForm = elAttr "form" ("style" =: "width: 600px;")
+            input <- combineDyn (\e f -> f (fromMaybe 0 e) ) maybeExperience
+              =<< combineDyn (&) international
+              =<< combineDyn (&) specialty
+              =<< combineDyn (\ms1 ms2 -> In (fromMaybe 0 ms1) (fromMaybe 0 ms2) ) maybeScore1 maybeScore2
+
+
+            programs <- mapDyn (calculate pairs) input
+            statesHist <- mapDyn (M.toList . statesHistogram) programs
+            stateSelectionMap <- mapDyn (M.fromList . ((Nothing, "No Filter"):) . map (\(s, n) -> (Just s, unState s ++ " (" ++ show n ++ ")"))) statesHist
+            stateToFilterBy <- selectorField "Filter by State" Nothing stateSelectionMap
+
+            combineDyn (\sf -> filter ((maybe (const True) (==) sf) . pState)) stateToFilterBy programs
+
+
+
+          dyn =<< mapDyn renderPrograms filteredPrograms
+
+        elAttr "div" ("class" =: "col-md-8") $ do
+          elAttr "div" ("id" =: "container") $ text ""
+
+    return ()
+
+decodeFromJS :: FromJSON a => T.JSString -> a
+decodeFromJS = fromJust . decode . LBS.pack . DT.fromJSString
+
+
+
+{- inputForm = elAttr "form" ("style" =: "width: 600px;") -}
+inputForm = el "form"
 
 textField label = do
   elAttr "div" ("class" =: "form-group") $ do
@@ -204,24 +141,44 @@ selectorField label z mp = do
 
 
 {- renderPrograms :: (Reflex t, MonadHold t m) => [Program] -> m () -}
-renderPrograms ps =
+renderPrograms ps = do
   {- elAttr "table" ("style" =: "border-width: 1; border-style: solid") $ do -}
-  elAttr "table" ("class" =: "table") $ do
-    el "tr" $ do
-      el "th" $ text "Program name"
-      el "th" $ text "Link"
-    forM_ ps $ \p ->
-      el "tr" $ do
-        el "td" . text $ pName p
-        el "td" . text $ pLink p
+  liftIO . resultStates . DT.toJSString . LBS.unpack . encode . M.mapKeys unState $ statesHistogram ps
+  if length ps > 0
+    then do
+      el "div" . text $ "Found " ++ show resultLen ++ " programs"
+      elAttr "table" ("class" =: "table") $ do
+        el "tr" $ do
+          el "th" $ text "Program name"
+        forM_ ps $ \p ->
+          el "tr" $ do
+            elAttr "a" ( M.fromList [("href", pLink p), ("target", "_blank")] ) . text $ pName p
+    else
+      el "div" . text $ "No programs were found with this criteria"
+
+  where
+    resultLen = length ps
+
+
+statesHistogram :: [Program] -> M.Map State Int
+{- states = S.toList . foldMap (S.singleton . pState) -}
+statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (pState p) 1)
 
 
 calculate :: [Pair] -> In -> [Program]
-calculate pairs input = nub . concatMap (cPrograms . pCluster) . filterByS1Score . filterBySpecialty $ pairs
-  where
-    filterByS1Score = filter (\p -> pS1MinScore p <= fromIntegral score && pS1MaxScore p >= fromIntegral score )
-    filterBySpecialty = filter ((== specialty) . pSpecialty)
+calculate pairs In{..} = 
+  case pFilter pairs of
+    [] -> []
+    ps -> prFilter . cPrograms . pCluster . maximum $ ps
 
-    score = iScore input
-    specialty = iSpecialty input
-    intl = iIntl input
+  where
+
+    pFilter = filter (\p -> pS1MinScore p <= fromIntegral iScore1 && pS1MaxScore p >= fromIntegral iScore1
+      && pS2MinScore p <= fromIntegral iScore2
+      && pSpecialty p == iSpecialty)
+
+    prFilter = filter (\pr -> (expPred $ pMinYrs pr) && pResidencySpecialty pr == iSpecialty ) 
+      
+    expPred Nothing = True
+    expPred (Just e) = e <= iExp
+
