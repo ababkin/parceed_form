@@ -5,7 +5,6 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE BangPatterns #-}
 
-import Reflex.Dom
 import qualified Data.Map as M
 import Data.List (nub, foldl')
 import Data.Maybe (fromMaybe, fromJust)
@@ -18,7 +17,8 @@ import Data.Aeson.Types (typeMismatch, Parser, Object)
 import Control.Monad.IO.Class (liftIO)
 import qualified Data.ByteString.Lazy.Char8 as LBS
 import Data.List (sort, maximum)
-import qualified Data.Set as S
+
+import Reflex.Dom
 import qualified GHCJS.Types    as T
 import qualified GHCJS.DOM.Types    as DT
 import qualified GHCJS.Foreign  as F
@@ -53,7 +53,7 @@ dataToPairs pds = M.elems . M.mapWithKey makePair . cdMap
 
 
 programs :: Int -> [ProgramDatum] -> [Program]
-programs cl = map fromDatum . filter ((== Just cl) . pdCluster)
+programs cl = sort . map fromDatum . filter ((== Just cl) . pdCluster)
   where
     fromDatum :: ProgramDatum -> Program
     fromDatum ProgramDatum{pdSchoolName, pdCity, pdState, pdPrevGMEYears, pdLink, pdResidencySpecialty} =
@@ -68,6 +68,21 @@ specialtiesMap :: [Pair] -> M.Map Specialty String
 specialtiesMap = M.fromList . map (\s@(Specialty t) -> (s, t)) . specialties
 
 
+allRegions = map Region ["Northeast Region", "Midwest Region", "South Region", "West Region"]
+
+statesInRegion :: Region -> [State]
+statesInRegion = map State . statesMap
+  where
+    statesMap r | r == Region "Northeast Region"  = ["Connecticut", "Maine", "Massachusetts", "New Hampshire", "Rhode Island",
+                                                      "Vermont", "New Jersey", "New York", "Pennsylvania"]
+                | r == Region "Midwest Region"    = ["Illinois", "Indiana", "Michigan", "Ohio", "Wisconsin",
+                                                      "Iowa", "Kansas", "Minnesota", "Missouri", "Nebraska", "North Dakota", "South Dakota"]
+                | r == Region "South Region"      = ["Delaware", "District of Columbia", "Florida", "Georgia", "Maryland", "North Carolina", 
+                                                      "South Carolina", "Virginia", "West Virginia", "Alabama", "Kentucky", "Mississippi",
+                                                      "Tennessee", "Arkansas", "Louisiana", "Oklahoma", "Texas"]
+                | r == Region "West Region"       = ["Arizona", "Colorado", "Idaho", "Montana", "Nevada", "New Mexico", "Utah", 
+                                                      "Wyoming", "Alaska", "California", "Hawaii", "Oregon", "Washington"]
+
 
 stylesheet :: MonadWidget t m => m ()
 stylesheet = elAttr "link" ("rel" =: "stylesheet" <> "href" =: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css") $ return ()
@@ -80,42 +95,48 @@ main = do
 
 
     elAttr "div" ("class" =: "container") $ do
-      elAttr "div" ("class" =: "row") $ do
-        elAttr "div" ("class" =: "col-md-4") $ do
+      filteredPrograms <- elAttr "div" ("class" =: "row") $ do
+        filteredPrograms <- elAttr "div" ("class" =: "col-md-4") $ do
 
-          filteredPrograms <- inputForm $ do
-            maybeScore1 <- mapDyn readMay =<< textField "Step 1 score"
+          filteredPrograms <- el "form" $ do
+            specialty <- selectorField "What is your specialty?" (head $ specialties pairs) (constDyn $ specialtiesMap pairs)
 
-            maybeScore2 <- mapDyn readMay =<< textField "Step 2 score"
-
-
-            specialty <- selectorField "Specialty" (head $ specialties pairs) (constDyn $ specialtiesMap pairs)
-
-            international <- selectorField "International" False (constDyn $ M.fromList [(False, "No"), (True, "Yes")])
-
-            maybeExperience <- mapDyn readMay =<< textField "Years of experience"
+            maybeScore1 <- mapDyn readMay =<< textField "What is your USMLE Step 1 Score?"
+            maybeScore2 <- mapDyn readMay =<< textField "What is your USMLE Step 2 Score?"
 
 
+            international <- selectorField "Are you International Medical Graduate (IMG)?" False (constDyn $ M.fromList [(False, "No"), (True, "Yes")])
+
+            maybeExperience <- mapDyn readMay =<< textField "How many years of clinical experience do you have?"
 
             input <- combineDyn (\e f -> f (fromMaybe 0 e) ) maybeExperience
               =<< combineDyn (&) international
               =<< combineDyn (&) specialty
               =<< combineDyn (\ms1 ms2 -> In (fromMaybe 0 ms1) (fromMaybe 0 ms2) ) maybeScore1 maybeScore2
 
-
             programs <- mapDyn (calculate pairs) input
-            statesHist <- mapDyn (M.toList . statesHistogram) programs
-            stateSelectionMap <- mapDyn (M.fromList . ((Nothing, "No Filter"):) . map (\(s, n) -> (Just s, unState s ++ " (" ++ show n ++ ")"))) statesHist
-            stateToFilterBy <- selectorField "Filter by State" Nothing stateSelectionMap
-
-            combineDyn (\sf -> filter ((maybe (const True) (==) sf) . pState)) stateToFilterBy programs
+            
+            {- statesHist <- mapDyn (M.toList . statesHistogram) programs -}
 
 
+            {- regionSelectionMap <- mapDyn (M.fromList . ((Nothing, "No Filter"):) . map (\(s, n) -> (Just s, unState s ++ " (" ++ show n ++ ")"))) statesHist -}
+            let regionSelectionMap = M.fromList . ((Nothing, "No Filter"):) $ map (\r -> (Just r, unRegion r)) allRegions
+            regionToFilterBy <- selectorField "In what US region would you prefer to match?" Nothing (constDyn regionSelectionMap)
 
-          dyn =<< mapDyn renderPrograms filteredPrograms
+            combineDyn (\rf -> filter ((maybe (const True) (flip elem . statesInRegion) rf) . pState)) regionToFilterBy programs
+          return filteredPrograms
+          
+
 
         elAttr "div" ("class" =: "col-md-8") $ do
           elAttr "div" ("id" =: "container") $ text ""
+
+        return filteredPrograms
+
+
+      elAttr "div" ("class" =: "row") $ do
+        elAttr "div" ("class" =: "col-md-12") $ do
+          dyn =<< mapDyn renderPrograms filteredPrograms
 
     return ()
 
@@ -123,14 +144,10 @@ decodeFromJS :: FromJSON a => T.JSString -> a
 decodeFromJS = fromJust . decode . LBS.pack . DT.fromJSString
 
 
-
-{- inputForm = elAttr "form" ("style" =: "width: 600px;") -}
-inputForm = el "form"
-
 textField label = do
   elAttr "div" ("class" =: "form-group") $ do
     elAttr "label" ("for" =: "") $ text label
-    _textInput_value <$> (textInput $ def & textInputConfig_attributes .~ constDyn ("class" =: "form-control") )
+    _textInput_value <$> textInput (def & textInputConfig_attributes .~ constDyn ("class" =: "form-control") )
 
 
 selectorField label z mp = do
@@ -140,19 +157,20 @@ selectorField label z mp = do
 
 
 
-{- renderPrograms :: (Reflex t, MonadHold t m) => [Program] -> m () -}
 renderPrograms ps = do
-  {- elAttr "table" ("style" =: "border-width: 1; border-style: solid") $ do -}
-  liftIO . resultStates . DT.toJSString . LBS.unpack . encode . M.mapKeys unState $ statesHistogram ps
+  liftIO . resultStates . DT.toJSString . LBS.unpack . encode . M.toList . M.mapKeys unState $ statesHistogram ps
   if length ps > 0
     then do
       el "div" . text $ "Found " ++ show resultLen ++ " programs"
-      elAttr "table" ("class" =: "table") $ do
-        el "tr" $ do
+      elClass "table" "table table-striped" $ do
+        el "thead" . el "tr" $ do
           el "th" $ text "Program name"
-        forM_ ps $ \p ->
-          el "tr" $ do
-            elAttr "a" ( M.fromList [("href", pLink p), ("target", "_blank")] ) . text $ pName p
+          el "th" $ text "State"
+        el "tbody" $ do
+          forM_ ps $ \p ->
+            el "tr" $ do
+              el "td" . elAttr "a" ( M.fromList [("href", pLink p), ("target", "_blank")] ) . text $ pName p
+              el "td" . text . unState $ pState p
     else
       el "div" . text $ "No programs were found with this criteria"
 
@@ -161,7 +179,6 @@ renderPrograms ps = do
 
 
 statesHistogram :: [Program] -> M.Map State Int
-{- states = S.toList . foldMap (S.singleton . pState) -}
 statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (pState p) 1)
 
 

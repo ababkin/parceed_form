@@ -61,6 +61,7 @@ data Specialty = Specialty {unSpecialty :: !String} deriving (Eq, Read, Show, Or
 
 newtype City  = City {unCity :: String} deriving (Eq, Ord)
 newtype State = State {unState :: String} deriving (Eq, Ord, Read, Show)
+newtype Region = Region {unRegion :: String} deriving (Eq, Ord, Read, Show)
 
 data Pair = Pair {
     pSpecialty    :: !Specialty
@@ -90,6 +91,9 @@ data Program = Program{
   , pLink   :: !String
   , pResidencySpecialty :: !Specialty
   } deriving Eq
+
+instance Ord Program where
+  Program{pState = ps1} `compare` Program{pState = ps2} = ps1 `compare` ps2
 
 data In = In {
     iScore1     :: Int
