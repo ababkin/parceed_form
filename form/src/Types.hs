@@ -25,9 +25,9 @@ data ClusterDatum = ClusterDatum {
 instance FromJSON ClusterDatum where
   parseJSON (Object o) = ClusterDatum
     <$> o .: "specialty"
-    <*> (read <$> o .: "cluster")
+    <*> (fromJust . readMay <$> o .: "cluster")
     <*> o .: "indicator"
-    <*> (read <$> o .: "avgValue")
+    <*> (fromJust . readMay  <$> o .: "avgValue")
   parseJSON o = typeMismatch "ClusterDatum" o
 
 
@@ -69,13 +69,19 @@ data Pair = Pair {
   , pS1MinScore   :: !Double
   , pS1MaxScore   :: !Double
   , pS2MinScore   :: !Double
-  , pH1Bprob      :: !Double
-  , pJ1prob       :: !Double
+  , pIMGProb      :: !Double
   , pNInterviews  :: !Double
   } deriving Eq
 
-instance Ord Pair where
-  Pair{pNInterviews = p1} `compare` Pair{pNInterviews = p2} = p1 `compare` p2 
+newtype PairSortableByInterviews = PairSortableByInterviews {unPairSortableByInterviews :: Pair} deriving Eq
+instance Ord PairSortableByInterviews where
+  PairSortableByInterviews Pair{pNInterviews = p1} `compare` PairSortableByInterviews Pair{pNInterviews = p2} = p1 `compare` p2 
+
+
+newtype PairSortableByIMGProb = PairSortableByIMGProb {unPairSortableByIMGProb :: Pair} deriving Eq
+instance Ord PairSortableByIMGProb where
+  PairSortableByIMGProb Pair{pIMGProb = p1} `compare` PairSortableByIMGProb Pair{pIMGProb = p2} = p1 `compare` p2 
+
 
 
 data Cluster = Cluster {

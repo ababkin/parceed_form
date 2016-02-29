@@ -40,8 +40,7 @@ dataToPairs pds = M.elems . M.mapWithKey makePair . cdMap
       <*> lookup "Average Step 1 score min" vs
       <*> lookup "Average Step 1 score max" vs
       <*> lookup "Step 2 Minimum Score" vs
-      <*> lookup "H1-B visa" vs
-      <*> lookup "J-1 visa" vs
+      <*> lookup "Percent of IMG" vs
       <*> lookup "Interviews conducted last year for first year positions" vs
 
 
@@ -184,15 +183,20 @@ statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (pState p) 1)
 
 calculate :: [Pair] -> In -> [Program]
 calculate pairs In{..} = 
-  case pFilter pairs of
+  case pScoreFilter pairs of
     [] -> []
-    ps -> prFilter . cPrograms . pCluster . maximum $ ps
+    ps -> prFilter . cPrograms . pCluster . pMaxFilter iIntl $ ps
 
   where
+    maximumByInterviews = unPairSortableByInterviews . maximum . map PairSortableByInterviews
+    maximumByIMGProb = unPairSortableByIMGProb . maximum . map PairSortableByIMGProb
 
-    pFilter = filter (\p -> pS1MinScore p <= fromIntegral iScore1 && pS1MaxScore p >= fromIntegral iScore1
+    pScoreFilter = filter (\p -> pS1MinScore p <= fromIntegral iScore1 && pS1MaxScore p >= fromIntegral iScore1
       && pS2MinScore p <= fromIntegral iScore2
       && pSpecialty p == iSpecialty)
+
+    pMaxFilter False = maximumByInterviews
+    pMaxFilter True = maximumByIMGProb
 
     prFilter = filter (\pr -> (expPred $ pMinYrs pr) && pResidencySpecialty pr == iSpecialty ) 
       
