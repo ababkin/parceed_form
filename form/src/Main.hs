@@ -56,8 +56,8 @@ programs :: Int -> [ProgramDatum] -> [Program]
 programs cl = sort . map fromDatum . filter ((== Just cl) . pdCluster)
   where
     fromDatum :: ProgramDatum -> Program
-    fromDatum ProgramDatum{pdSchoolName, pdCity, pdState, pdPrevGMEYears, pdLink, pdResidencySpecialty} =
-      Program pdSchoolName (City pdCity) (State pdState) pdPrevGMEYears pdLink (Specialty pdResidencySpecialty)
+    fromDatum ProgramDatum{pdSchoolName, pdCity, pdState, pdLink, pdSpecialty, pdResidencySpecialty} =
+      Program pdSchoolName (Specialty pdResidencySpecialty) pdSpecialty (City pdCity) (State pdState) pdLink 
 
 
 
@@ -84,14 +84,11 @@ statesInRegion = map State . statesMap
                                                       "Wyoming", "Alaska", "California", "Hawaii", "Oregon", "Washington"]
 
 
-{- stylesheet :: MonadWidget t m => m () -}
-{- stylesheet = elAttr "link" ("rel" =: "stylesheet" <> "href" =: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css") $ return () -}
 
 main = do
   !pairs <- dataToPairs 
                       <$> (decodeFromJS <$> programData) 
                       <*> (decodeFromJS <$> clusterData)
-  {- mainWidgetWithHead stylesheet $ do -}
   mainWidget $ do
 
     elClass "div" "container parceed" $ do
@@ -113,16 +110,14 @@ main = do
 
             programs <- mapDyn (calculate pairs) input
             
-            {- statesHist <- mapDyn (M.toList . statesHistogram) programs -}
 
             submitEvt <- submitButton "Submit"
             programsDyn <- holdDyn [] $ tagDyn programs submitEvt
 
-            {- regionSelectionMap <- mapDyn (M.fromList . ((Nothing, "No Filter"):) . map (\(s, n) -> (Just s, unState s ++ " (" ++ show n ++ ")"))) statesHist -}
             let regionSelectionMap = M.fromList . ((Nothing, "No Filter"):) $ map (\r -> (Just r, unRegion r)) allRegions
             regionToFilterBy <- selectorField "In what US region would you prefer to match?" Nothing (constDyn regionSelectionMap)
 
-            combineDyn (\rf -> filter ((maybe (const True) (flip elem . statesInRegion) rf) . pState)) regionToFilterBy programsDyn
+            combineDyn (\rf -> filter ((maybe (const True) (flip elem . statesInRegion) rf) . prState)) regionToFilterBy programsDyn
           return filteredPrograms
           
 
@@ -171,14 +166,16 @@ renderPrograms ps = do
       elClass "table" "table table-striped" $ do
         el "thead" . el "tr" $ do
           el "th" $ text "Program name"
+          el "th" $ text "Subspecialty"
           el "th" $ text "City"
           el "th" $ text "State"
         el "tbody" $ do
           forM_ ps $ \p ->
             el "tr" $ do
-              el "td" . elAttr "a" ( M.fromList [("href", pLink p), ("target", "_blank")] ) . text $ pName p
-              el "td" . text . unCity $ pCity p
-              el "td" . text . unState $ pState p
+              el "td" . elAttr "a" ( M.fromList [("href", prLink p), ("target", "_blank")] ) . text $ prName p
+              el "td" . text $ prSubspecialty p
+              el "td" . text . unCity $ prCity p
+              el "td" . text . unState $ prState p
     else
       el "div" . text $ "No programs were found with this criteria"
 
@@ -187,7 +184,7 @@ renderPrograms ps = do
 
 
 statesHistogram :: [Program] -> M.Map State Int
-statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (pState p) 1)
+statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (prState p) 1)
 
 
 calculate :: [Pair] -> In -> [Program]
@@ -217,4 +214,4 @@ calculate pairs In{..} =
     pMaxFilter False = maximumByInterviews
     pMaxFilter True = maximumByIMGProb
 
-    prFilter = filter (\pr -> pResidencySpecialty pr == iSpecialty ) 
+    prFilter = filter (\pr -> prSpecialty pr == iSpecialty ) 

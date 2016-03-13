@@ -38,7 +38,6 @@ data ProgramDatum = ProgramDatum {
   , pdCity               :: !String
   , pdState              :: !String
   , pdResidencySpecialty :: !String
-  , pdPrevGMEYears       :: !(Maybe Int)
   , pdCluster            :: !(Maybe Int)
   , pdLink               :: !String
   }
@@ -51,7 +50,6 @@ instance FromJSON ProgramDatum where
     <*> o .: "city"
     <*> o .: "state"
     <*> o .: "residencySpecialty"
-    <*> (readMay <$> o .: "prevGMEYears")
     <*> (readMay <$> o .: "cluster")
     <*> o .: "link"
   parseJSON o = typeMismatch "ProgramDatum" o
@@ -102,16 +100,16 @@ data Cluster = Cluster {
   } deriving Eq
 
 data Program = Program{
-    pName   :: !String
-  , pCity   :: !City
-  , pState  :: !State
-  , pMinYrs :: !(Maybe Int)
-  , pLink   :: !String
-  , pResidencySpecialty :: !Specialty
+    prName         :: !String
+  , prSpecialty    :: !Specialty
+  , prSubspecialty :: !String
+  , prCity         :: !City
+  , prState        :: !State
+  , prLink         :: !String
   } deriving Eq
 
 instance Ord Program where
-  Program{pState = ps1} `compare` Program{pState = ps2} = ps1 `compare` ps2
+  Program{prState = ps1} `compare` Program{prState = ps2} = ps1 `compare` ps2
 
 data In = In {
     iScore1     :: Int
