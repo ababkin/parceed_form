@@ -82,6 +82,18 @@ newtype PairSortableByIMGProb = PairSortableByIMGProb {unPairSortableByIMGProb :
 instance Ord PairSortableByIMGProb where
   PairSortableByIMGProb Pair{pIMGProb = p1} `compare` PairSortableByIMGProb Pair{pIMGProb = p2} = p1 `compare` p2 
 
+newtype PairSortableByS1MinScore = PairSortableByS1MinScore {unPairSortableByS1MinScore :: Pair} deriving Eq
+instance Ord PairSortableByS1MinScore where
+  PairSortableByS1MinScore Pair{pS1MinScore = p1} `compare` PairSortableByS1MinScore Pair{pS1MinScore = p2} = p1 `compare` p2 
+
+newtype PairSortableByS1MaxScore = PairSortableByS1MaxScore {unPairSortableByS1MaxScore :: Pair} deriving Eq
+instance Ord PairSortableByS1MaxScore where
+  PairSortableByS1MaxScore Pair{pS1MinScore = p1} `compare` PairSortableByS1MaxScore Pair{pS1MinScore = p2} = p1 `compare` p2 
+
+
+newtype PairSortableByS2MinScore = PairSortableByS2MinScore {unPairSortableByS2MinScore :: Pair} deriving Eq
+instance Ord PairSortableByS2MinScore where
+  PairSortableByS2MinScore Pair{pS1MinScore = p1} `compare` PairSortableByS2MinScore Pair{pS1MinScore = p2} = p1 `compare` p2 
 
 
 data Cluster = Cluster {

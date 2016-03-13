@@ -6,7 +6,8 @@
 {-# LANGUAGE BangPatterns #-}
 
 import qualified Data.Map as M
-import Data.List (nub, foldl')
+import Data.List (nub, foldl', sortBy)
+import Data.Ord (comparing)
 import Data.Maybe (fromMaybe, fromJust)
 import Safe (readMay)
 import Control.Monad (forM_)
@@ -83,19 +84,19 @@ statesInRegion = map State . statesMap
                                                       "Wyoming", "Alaska", "California", "Hawaii", "Oregon", "Washington"]
 
 
-stylesheet :: MonadWidget t m => m ()
-stylesheet = elAttr "link" ("rel" =: "stylesheet" <> "href" =: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css") $ return ()
+{- stylesheet :: MonadWidget t m => m () -}
+{- stylesheet = elAttr "link" ("rel" =: "stylesheet" <> "href" =: "https://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/css/bootstrap.min.css") $ return () -}
 
 main = do
   !pairs <- dataToPairs 
                       <$> (decodeFromJS <$> programData) 
                       <*> (decodeFromJS <$> clusterData)
-  mainWidgetWithHead stylesheet $ do
+  {- mainWidgetWithHead stylesheet $ do -}
+  mainWidget $ do
 
-
-    elAttr "div" ("class" =: "container") $ do
-      filteredPrograms <- elAttr "div" ("class" =: "row") $ do
-        filteredPrograms <- elAttr "div" ("class" =: "col-md-4") $ do
+    elClass "div" "container parceed" $ do
+      filteredPrograms <- elClass "div" "row" $ do
+        filteredPrograms <- elClass "div" "col-md-4" $ do
 
           filteredPrograms <- el "form" $ do
             specialty <- selectorField "What is your specialty?" (head $ specialties pairs) (constDyn $ specialtiesMap pairs)
@@ -117,12 +118,14 @@ main = do
             
             {- statesHist <- mapDyn (M.toList . statesHistogram) programs -}
 
+            submitEvt <- submitButton "Submit"
+            programsDyn <- holdDyn [] $ tagDyn programs submitEvt
 
             {- regionSelectionMap <- mapDyn (M.fromList . ((Nothing, "No Filter"):) . map (\(s, n) -> (Just s, unState s ++ " (" ++ show n ++ ")"))) statesHist -}
             let regionSelectionMap = M.fromList . ((Nothing, "No Filter"):) $ map (\r -> (Just r, unRegion r)) allRegions
             regionToFilterBy <- selectorField "In what US region would you prefer to match?" Nothing (constDyn regionSelectionMap)
 
-            combineDyn (\rf -> filter ((maybe (const True) (flip elem . statesInRegion) rf) . pState)) regionToFilterBy programs
+            combineDyn (\rf -> filter ((maybe (const True) (flip elem . statesInRegion) rf) . pState)) regionToFilterBy programsDyn
           return filteredPrograms
           
 
@@ -139,18 +142,25 @@ main = do
 
     return ()
 
+submitButton :: MonadWidget t m => String -> m (Event t ())
+submitButton s = do
+  elClass "div" "form-group submit" $ do
+    (e, _) <- elAttr' "button" (M.fromList [("type", "button"), ("class", "btn btn-primary submit pull-right")]) $ text s
+    return $ domEvent Click e
+
+
 decodeFromJS :: FromJSON a => T.JSString -> a
 decodeFromJS = fromJust . decode . LBS.pack . DT.fromJSString
 
 
 textField label = do
-  elAttr "div" ("class" =: "form-group") $ do
+  elClass "div" "form-group" $ do
     elAttr "label" ("for" =: "") $ text label
     _textInput_value <$> textInput (def & textInputConfig_attributes .~ constDyn ("class" =: "form-control") )
 
 
 selectorField label z mp = do
-  elAttr "div" ("class" =: "form-group") $ do
+  elClass "div" "form-group" $ do
     elAttr "label" ("for" =: "") $ text label
     _dropdown_value <$> dropdown z mp (def & dropdownConfig_attributes .~ constDyn ("class" =: "form-control") )
 
@@ -164,11 +174,13 @@ renderPrograms ps = do
       elClass "table" "table table-striped" $ do
         el "thead" . el "tr" $ do
           el "th" $ text "Program name"
+          el "th" $ text "City"
           el "th" $ text "State"
         el "tbody" $ do
           forM_ ps $ \p ->
             el "tr" $ do
               el "td" . elAttr "a" ( M.fromList [("href", pLink p), ("target", "_blank")] ) . text $ pName p
+              el "td" . text . unCity $ pCity p
               el "td" . text . unState $ pState p
     else
       el "div" . text $ "No programs were found with this criteria"
@@ -183,7 +195,7 @@ statesHistogram = M.unionsWith (+) . map (\p -> M.singleton (pState p) 1)
 
 calculate :: [Pair] -> In -> [Program]
 calculate pairs In{..} = 
-  case pScoreFilter pairs of
+  case pScore2Filter . pScore1Filter . pSpecialtyFilter $ pairs of
     [] -> []
     ps -> prFilter . cPrograms . pCluster . pMaxFilter iIntl $ ps
 
@@ -191,9 +203,19 @@ calculate pairs In{..} =
     maximumByInterviews = unPairSortableByInterviews . maximum . map PairSortableByInterviews
     maximumByIMGProb = unPairSortableByIMGProb . maximum . map PairSortableByIMGProb
 
-    pScoreFilter = filter (\p -> pS1MinScore p <= fromIntegral iScore1 && pS1MaxScore p >= fromIntegral iScore1
-      && pS2MinScore p <= fromIntegral iScore2
-      && pSpecialty p == iSpecialty)
+    pScore1Filter ps = 
+      case filter (\p -> pS1MinScore p <= fromIntegral iScore1 && pS1MaxScore p >= fromIntegral iScore1) ps of
+        [] -> take 1 $ sortBy (comparing $ \p -> abs((pS1MinScore p + pS1MaxScore p) / 2 - fromIntegral iScore1) ) ps
+        fps -> fps
+
+    pScore2Filter ps = 
+      case filter (\p -> pS2MinScore p <= fromIntegral iScore2) ps of
+        [] -> take 1 $ sortBy (comparing $ \p -> abs(pS2MinScore p - fromIntegral iScore2) ) ps
+        fps -> fps
+
+
+    pSpecialtyFilter = filter (\p -> pSpecialty p == iSpecialty)
+
 
     pMaxFilter False = maximumByInterviews
     pMaxFilter True = maximumByIMGProb

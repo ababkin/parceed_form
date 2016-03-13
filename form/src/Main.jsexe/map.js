@@ -79,7 +79,8 @@ function resultStates(data){
     mapNavigation: {
         enabled: true,
         buttonOptions: {
-            verticalAlign: 'bottom'
+            verticalAlign: 'bottom',
+            align: "right"
         }
     },
 
