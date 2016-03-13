@@ -37,6 +37,7 @@ data ProgramDatum = ProgramDatum {
   , pdSpecialty          :: !String
   , pdCity               :: !String
   , pdState              :: !String
+  , pdChance             :: !(Maybe Int)
   , pdResidencySpecialty :: !String
   , pdCluster            :: !(Maybe Int)
   , pdLink               :: !String
@@ -49,6 +50,7 @@ instance FromJSON ProgramDatum where
     <*> o .: "specialty"
     <*> o .: "city"
     <*> o .: "state"
+    <*> ((fmap floor) . readMay <$> o .: "chance")
     <*> o .: "residencySpecialty"
     <*> (readMay <$> o .: "cluster")
     <*> o .: "link"
@@ -105,6 +107,7 @@ data Program = Program{
   , prSubspecialty :: !String
   , prCity         :: !City
   , prState        :: !State
+  , prChance       :: !(Maybe Int)
   , prLink         :: !String
   } deriving Eq
 
