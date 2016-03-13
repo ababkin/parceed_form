@@ -118,7 +118,6 @@ data In = In {
   , iScore2     :: Int
   , iSpecialty  :: Specialty
   , iIntl       :: Bool
-  , iExp        :: Int
   }
 
 

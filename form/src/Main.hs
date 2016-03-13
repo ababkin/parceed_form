@@ -107,12 +107,9 @@ main = do
 
             international <- selectorField "Are you International Medical Graduate (IMG)?" False (constDyn $ M.fromList [(False, "No"), (True, "Yes")])
 
-            maybeExperience <- mapDyn readMay =<< textField "How many years of clinical experience do you have?"
-
-            input <- combineDyn (\e f -> f (fromMaybe 0 e) ) maybeExperience
-              =<< combineDyn (&) international
-              =<< combineDyn (&) specialty
-              =<< combineDyn (\ms1 ms2 -> In (fromMaybe 0 ms1) (fromMaybe 0 ms2) ) maybeScore1 maybeScore2
+            input <-  combineDyn (&) international
+                  =<< combineDyn (&) specialty
+                  =<< combineDyn (\ms1 ms2 -> In (fromMaybe 0 ms1) (fromMaybe 0 ms2) ) maybeScore1 maybeScore2
 
             programs <- mapDyn (calculate pairs) input
             
@@ -220,8 +217,4 @@ calculate pairs In{..} =
     pMaxFilter False = maximumByInterviews
     pMaxFilter True = maximumByIMGProb
 
-    prFilter = filter (\pr -> (expPred $ pMinYrs pr) && pResidencySpecialty pr == iSpecialty ) 
-      
-    expPred Nothing = True
-    expPred (Just e) = e <= iExp
-
+    prFilter = filter (\pr -> pResidencySpecialty pr == iSpecialty ) 
